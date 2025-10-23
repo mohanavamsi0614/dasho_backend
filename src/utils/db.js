@@ -23,7 +23,20 @@ async function connectDB() {
 }
 
 const UserCollection = () => {
+  if (!db) {
+    throw new Error(
+      "Database not initialized yet. Call connectDB() before using collections."
+    );
+  }
   return db.collection("users");
 };
+const OrganizationCollection = () => {
+  if (!db) {
+    throw new Error(
+      "Database not initialized yet. Call connectDB() before using collections."
+    );
+  }
+  return db.collection("organizations");
+};
 
-export { connectDB, UserCollection, db };
+export { connectDB, UserCollection, OrganizationCollection, db };
