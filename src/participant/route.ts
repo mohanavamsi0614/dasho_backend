@@ -1,9 +1,3 @@
-import { Router } from "express";
+// Converted to JavaScript. See `src/participant/route.js`.
 
-const partisipantRouter = Router();
-
-partisipantRouter.get("/", (req, res) => {
-  res.send("Participant Information");
-});
-
-export default partisipantRouter;
+export {};

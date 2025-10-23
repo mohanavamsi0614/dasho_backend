@@ -1,8 +1,8 @@
-import express, { Request, Response } from "express";
+import express from "express";
 import { connectDB } from "./utils/db.js";
-import { Db } from "mongodb";
-import adminRouter from "./admin/route.js"
-import participantRouter from "./participant/route.js"
+import adminRouter from "./admin/route.js";
+import participantRouter from "./participant/route.js";
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -10,10 +10,10 @@ app.use(express.json());
 app.use("/admin", adminRouter);
 app.use("/participant", participantRouter);
 
-let dbInstance: Db | null = null;
+let dbInstance = null;
 
 connectDB()
-  .then((db: Db) => {
+  .then((db) => {
     dbInstance = db;
     console.log("Database connected successfully");
 
@@ -21,12 +21,12 @@ connectDB()
       console.log(`Server is running on port ${PORT}`);
     });
   })
-  .catch((err: Error) => {
+  .catch((err) => {
     console.error("Database connection failed", err);
   });
 
-app.get("/", async (req: Request, res: Response) => {
+app.get("/", async (req, res) => {
   res.send("Welcome to the Dasho Server!");
 });
 
-
+export default app;
