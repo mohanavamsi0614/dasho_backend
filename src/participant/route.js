@@ -5,6 +5,16 @@ import mongodb from "mongodb";
 import axios from "axios";
 import fs from "fs";
 import cors from "cors";
+import { createTransport } from "nodemailer";
+
+const transporter = createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
 
 
 const participantRouter = Router();
@@ -52,9 +62,9 @@ participantRouter.post("/register", async (req, res) => {
   }
 });
 
-participantRouter.post("/eventdata", async (req, res) => {
+participantRouter.get("/eventdata/:eventId", async (req, res) => {
   try {
-    const {eventId}= req.body;
+    const {eventId}= req.params;
     const eventData = await db.collection(eventId).find({}).toArray();
     res.json({ eventData });
   } catch (err) {
@@ -106,7 +116,7 @@ participantRouter.post("/register/qr/:event", async (req, res) => {
     const reg_user=await db.collection(eventData.eventId).insertOne({...req.body, userId: userId });
      
     axios.get(
-      QR_API + encodeURIComponent('https://dasho-backend.onrender.com/participant/user'+event+"/" + reg_user.insertedId),
+      QR_API + encodeURIComponent('https://dasho-backend.onrender.com/participant/user/'+event+"/" + reg_user.insertedId),
       { responseType: 'stream' }
     ).then(response => {
       response.data.pipe(fs.createWriteStream(reg_user.insertedId + 'qrcode.png'));
@@ -118,6 +128,43 @@ participantRouter.post("/register/qr/:event", async (req, res) => {
       { _id: new mongodb.ObjectId(userId) },
       { $addToSet: { registeredEvents: eventData } }
     );
+await transporter.sendMail({
+  from: process.env.EMAIL_USER,
+  to: req.body.email,
+  subject: `Registration Successful for ${eventData.eventTitle}`,
+  text: `You have been successfully registered for the event ${eventData.eventTitle}. Use the attached QR code for event check-in and check-out.`,
+  html: `
+  <div style="font-family: Arial, sans-serif; background-color: #f7f8fa; padding: 20px; color: #333;">
+    <div style="max-width: 600px; margin: auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 0 8px rgba(0,0,0,0.1);">
+      <div style="background-color: #E16254; padding: 15px; text-align: center; color: white;">
+        <h1 style="margin: 0;">${eventData.eventTitle}</h1>
+      </div>
+      <div style="padding: 25px; text-align: center;">
+        <h2 style="color: #000;">Registration Successful 🎉</h2>
+        <p style="font-size: 16px; margin-bottom: 20px;">
+          Hello <strong>${req.body.name || "Participant"}</strong>,<br/>
+          You have been successfully registered for <strong>${eventData.eventTitle}</strong>.
+        </p>
+        <p style="font-size: 15px; color: #444;">
+          Please use the attached <strong>QR Code</strong> for event check-in and check-out.
+        </p>
+        <div style="margin-top: 20px;">
+          <img src="cid:qrcode" alt="QR Code" style="width: 180px; height: 180px; border-radius: 8px;" />
+        </div>
+        <p style="margin-top: 25px; font-size: 14px; color: #888;">
+          Thank you for registering!<br/>
+          — The Event Team
+        </p>
+        <img src="https://dasho-backend.onrender.com/${reg_user.insertedId}qrcode.png" alt="QR Code" style="width: 180px; height: 180px; border-radius: 8px;" />
+      </div>
+      <div style="background-color: #ECE8E7; text-align: center; padding: 12px; font-size: 13px; color: #666;">
+        <p style="margin: 0;">© ${new Date().getFullYear()} ${eventData.orgName || "Our Organization"}</p>
+      </div>
+    </div>
+  </div>
+  `,
+  
+});
     res.json({ message: "User registered and QR code generated successfully",registrationId:reg_user.insertedId, user });
   }
   catch(err){
@@ -146,5 +193,22 @@ participantRouter.get("/user/:event/:userId", async (req, res) => {
   }
 });
 
+participantRouter.get("/team/:event/:pass", async (req, res) => {
+  const {pass}=req.params;
+  try {
+    const eventCollection = db.collection('events');
+    const { event } = req.params;
+    console.log("Fetching team data for event:", event, "and pass:", pass);
+    const eventDoc = await eventCollection.findOne({ _id: new mongodb.ObjectId(event) });
+    if (!eventDoc) return res.status(404).json({ error: 'Event not found' });
+    const teamCollection = db.collection(eventDoc.eventId);
+    const team = await teamCollection.findOne({ teamName: pass });
+    if (!team) return res.status(404).json({ error: 'Team not found' });
+    res.json({ team });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 export default participantRouter;

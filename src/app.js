@@ -6,8 +6,8 @@ import participantRouter from "./participant/route.js";
 
 const app = express();
 const PORT = process.env.PORT || 6100;
-
 app.use(express.json());
+app.use(express.static("./"));
 app.use("/admin", adminRouter);
 app.use(cors({origin: '*'}));
 app.use("/participant", participantRouter);
