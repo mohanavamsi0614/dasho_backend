@@ -123,10 +123,11 @@ participantRouter.post("/register/qr/:event", async (req, res) => {
       console.error('Error generating QR code:', error);
       res.status(500).json({ error: "Error generating QR code" });
     });
-    const user=await userCollection.updateOne(
+    await userCollection.updateOne(
       { _id: new mongodb.ObjectId(userId) },
       { $addToSet: { registeredEvents: eventData } }
     );
+    const user=await userCollection.findOne({ _id: new mongodb.ObjectId(userId) });
     axios.post("https://7feej0sxm3.execute-api.eu-north-1.amazonaws.com/default/mail_sender",{
       to:req.body.email,
       subject:`Registration Successful for ${eventData.eventTitle}`,
@@ -146,13 +147,12 @@ participantRouter.post("/register/qr/:event", async (req, res) => {
           Please use the attached <strong>QR Code</strong> for event check-in and check-out.
         </p>
         <div style="margin-top: 20px;">
-          <img src="cid:qrcode" alt="QR Code" style="width: 180px; height: 180px; border-radius: 8px;" />
+        <img src="https://dasho-backend.onrender.com/${reg_user.insertedId}qrcode.png" alt="QR Code" style="width: 180px; height: 180px; border-radius: 8px;" />
         </div>
         <p style="margin-top: 25px; font-size: 14px; color: #888;">
           Thank you for registering!<br/>
           — The Event Team
         </p>
-        <img src="https://dasho-backend.onrender.com/${reg_user.insertedId}qrcode.png" alt="QR Code" style="width: 180px; height: 180px; border-radius: 8px;" />
       </div>
       <div style="background-color: #ECE8E7; text-align: center; padding: 12px; font-size: 13px; color: #666;">
         <p style="margin: 0;">© ${new Date().getFullYear()} ${eventData.orgName || "Our Organization"}</p>
