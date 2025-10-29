@@ -132,7 +132,6 @@ await transporter.sendMail({
   from: process.env.EMAIL_USER,
   to: req.body.email,
   subject: `Registration Successful for ${eventData.eventTitle}`,
-  text: `You have been successfully registered for the event ${eventData.eventTitle}. Use the attached QR code for event check-in and check-out.`,
   html: `
   <div style="font-family: Arial, sans-serif; background-color: #f7f8fa; padding: 20px; color: #333;">
     <div style="max-width: 600px; margin: auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 0 8px rgba(0,0,0,0.1);">
@@ -162,8 +161,7 @@ await transporter.sendMail({
       </div>
     </div>
   </div>
-  `,
-  
+  `
 });
     res.json({ message: "User registered and QR code generated successfully",registrationId:reg_user.insertedId, user });
   }
