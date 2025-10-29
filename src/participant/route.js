@@ -121,8 +121,9 @@ participantRouter.post("/register/qr/:event", async (req, res) => {
       { $addToSet: { registeredEvents: eventData } }
     );
     axios.post("https://7feej0sxm3.execute-api.eu-north-1.amazonaws.com/default/mail_sender",{
-      to_email:req.body.email,
-      subject:`Registration Successful for ${eventData.eventTitle}`,html: `
+      to:req.body.email,
+      subject:`Registration Successful for ${eventData.eventTitle}`,
+      html: `
   <div style="font-family: Arial, sans-serif; background-color: #f7f8fa; padding: 20px; color: #333;">
     <div style="max-width: 600px; margin: auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 0 8px rgba(0,0,0,0.1);">
       <div style="background-color: #E16254; padding: 15px; text-align: center; color: white;">
