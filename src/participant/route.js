@@ -57,8 +57,9 @@ participantRouter.post("/register", async (req, res) => {
 participantRouter.get("/eventdata/:eventId", async (req, res) => {
   try {
     const {eventId}= req.params;
-    const eventData = await db.collection(eventId).find({}).toArray();
-    res.json({ eventData });
+    const orgCollection = db.collection('events');
+    const eventData = await orgCollection.findOne({ eventId: eventId });
+    res.json( eventData );
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
