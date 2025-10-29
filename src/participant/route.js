@@ -5,17 +5,9 @@ import mongodb from "mongodb";
 import axios from "axios";
 import fs from "fs";
 import cors from "cors";
-import { createTransport } from "nodemailer";
+import { Resend } from 'resend';
 
-const transporter = createTransport({
-host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+const transporter = new Resend(process.env.RESEND_API_KEY);
 
 
 
@@ -130,11 +122,9 @@ participantRouter.post("/register/qr/:event", async (req, res) => {
       { _id: new mongodb.ObjectId(userId) },
       { $addToSet: { registeredEvents: eventData } }
     );
-await transporter.sendMail({
-  from: process.env.EMAIL_USER,
-  to: req.body.email,
-  subject: `Registration Successful for ${eventData.eventTitle}`,
-  html: `
+    axios.post("https://7feej0sxm3.execute-api.eu-north-1.amazonaws.com/default/mail_sender",{
+      to_email:req.body.email,
+      subject:`Registration Successful for ${eventData.eventTitle}`,html: `
   <div style="font-family: Arial, sans-serif; background-color: #f7f8fa; padding: 20px; color: #333;">
     <div style="max-width: 600px; margin: auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 0 8px rgba(0,0,0,0.1);">
       <div style="background-color: #E16254; padding: 15px; text-align: center; color: white;">
@@ -163,9 +153,12 @@ await transporter.sendMail({
       </div>
     </div>
   </div>
-  `
-});
-    res.json({ message: "User registered and QR code generated successfully",registrationId:reg_user.insertedId, user });
+  `}).then(response => {
+      console.log('Email sent successfully:', response.data);
+      res.json({ message: "User registered and QR code generated successfully",registrationId:reg_user.insertedId, user });
+    }).catch(error => {
+      console.error('Error sending email:', error);
+    });
   }
   catch(err){
     console.error(err);
