@@ -5,9 +5,7 @@ import mongodb from "mongodb";
 import axios from "axios";
 import fs from "fs";
 import cors from "cors";
-import { Resend } from 'resend';
 
-const transporter = new Resend(process.env.RESEND_API_KEY);
 
 
 
