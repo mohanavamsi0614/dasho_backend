@@ -88,7 +88,8 @@ participantRouter.post("/register/hackathon/:event", async (req, res) => {
       { _id: userId },
       { $addToSet: { registeredEvents: event } }
     );
-    res.json({ message: "User registered for event successfully" });
+    const user_=await userCollection.findOne({ _id: new mongodb.ObjectId(userId) });
+        res.json({ message: "User registered for event successfully", user: user_ });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
@@ -101,9 +102,15 @@ participantRouter.post("/register/qr/:event", async (req, res) => {
     const { event } = req.params;
     const { userId } = req.body;
     const eventCollection = db.collection('events');
+
     const eventData = await eventCollection.findOne({ _id: new mongodb.ObjectId(event) });
+
     if (!eventData) {
       return res.status(404).json({ error: "Event not found" });
+    }
+    const exit=await db.collection(eventData.eventId).findOne({rollNumber:req.body.rollNumber});
+    if(exit){
+      return  res.status(400).json({ error: "User with this roll number already registered" });
     }
     const reg_user=await db.collection(eventData.eventId).insertOne({...req.body, userId: userId });
      
