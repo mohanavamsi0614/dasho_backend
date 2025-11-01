@@ -86,7 +86,7 @@ participantRouter.post("/register/hackathon/:event", async (req, res) => {
     }
     await db.collection(event.eventId).insertOne({ ...req.body, userId: userId, userName: user.name });
     await userCollection.updateOne(
-      { _id: userId },
+      { _id: new mongodb.ObjectId(userId) },
       { $addToSet: { registeredEvents: event } }
     );
     const user_=await userCollection.findOne({ _id: new mongodb.ObjectId(userId) });
