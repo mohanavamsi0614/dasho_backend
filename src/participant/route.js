@@ -1,33 +1,28 @@
 import { Router } from "express";
-import { UserCollection,db } from "../utils/db.js";
-import express from "express";
-import mongodb from "mongodb";
+import { UserCollection, db } from "../utils/db.js";
+import { ObjectId } from "mongodb";
 import axios from "axios";
 import fs from "fs";
 import cors from "cors";
-
-
-
+import { QR_API_URL, BACKEND_URL } from "../config.js";
+import { sendPaymentEmail, sendRegistrationEmail } from "../utils/email.js";
 
 const participantRouter = Router();
-participantRouter.use(express.json());
-participantRouter.use(cors({origin: '*'}));
+participantRouter.use(cors({ origin: '*' }));
+
 participantRouter.get("/", (req, res) => {
   res.send("Participant Information");
 });
 
-const QR_API="https://api.qrserver.com/v1/create-qr-code/?data=";
-
 participantRouter.post("/auth", async (req, res) => {
   try {
     const userCollection = UserCollection();
-    console.log(req.body);
     const { email } = req.body;
     const user = await userCollection.findOne({ email });
     if (!user) {
       res.json({ newUser: true });
     } else {
-      res.json({ newUser: false, user});
+      res.json({ newUser: false, user });
     }
   } catch (err) {
     console.error(err);
@@ -39,9 +34,7 @@ participantRouter.post("/register", async (req, res) => {
   try {
     const userCollection = UserCollection();
     const userData = req.body;
-    const existingUser = await userCollection
-
-      .findOne({ email: userData.email });
+    const existingUser = await userCollection.findOne({ email: userData.email });
     if (existingUser) {
       return res.status(400).json({ error: "User already exists" });
     }
@@ -56,15 +49,16 @@ participantRouter.post("/register", async (req, res) => {
 
 participantRouter.get("/eventdata/:eventId", async (req, res) => {
   try {
-    const {eventId}= req.params;
+    const { eventId } = req.params;
     const orgCollection = db.collection('events');
     const eventData = await orgCollection.findOne({ eventId: eventId });
-    res.json( eventData );
+    res.json(eventData);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
   }
 });
+
 participantRouter.get("/eventslist", async (req, res) => {
   try {
     const events = await db.collection('events').find({}).toArray();
@@ -74,127 +68,206 @@ participantRouter.get("/eventslist", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+
 participantRouter.post("/register/hackathon/:event", async (req, res) => {
   try {
+
     const eventCollection = db.collection('events');
     const { userId } = req.body;
-    const event = await eventCollection.findOne({ _id: new mongodb.ObjectId(req.params.event) });
+    
+    if (!ObjectId.isValid(req.params.event) || !ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid event ID or user ID" });
+    }
+
+    const event = await eventCollection.findOne({ _id: new ObjectId(req.params.event) });
     const userCollection = UserCollection();
-    const user = await userCollection.findOne({ _id: new mongodb.ObjectId(userId) });
+    const user = await userCollection.findOne({ _id: new ObjectId(userId) });
+    if(event.status!="open"){
+      return res.status(400).json({ error: "Event is not open" });
+    }
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
-    await db.collection(event.eventId).insertOne({ ...req.body, userId: userId, userName: user.name });
+    if (event.maxTeams < (event?.teams?.length || 1)) {
+      return res.status(400).json({ error: "Event is full" });
+    }
+    const check=await db.collection(event.eventId).findOne({teamName:req.body.teamName.toLowerCase()})
+    if(check){
+      return res.status(400).json({ error: "Team name already exists" });
+    }
+    
+    const team = await db.collection(event.eventId).insertOne({ 
+      ...req.body, 
+      userId: userId, 
+      userName: user.name, 
+      payment: false 
+    });
+    
+    await eventCollection.updateOne(
+      { _id: new ObjectId(event._id) }, 
+      { $push: { teams: team.insertedId } }
+    );
+    
     await userCollection.updateOne(
-      { _id: new mongodb.ObjectId(userId) },
+      { _id: new ObjectId(userId) },
       { $addToSet: { registeredEvents: event } }
     );
-    const user_=await userCollection.findOne({ _id: new mongodb.ObjectId(userId) });
-        res.json({ message: "User registered for event successfully", user: user_ });
+    
+    const updatedUser = await userCollection.findOne({ _id: new ObjectId(userId) });
+    sendPaymentEmail(req.body.lead,event,req.body.teamName,`https://daso_p.vercel.app/payment/${event.eventId}/${team.insertedId}`)
+    res.json({ message: "User registered for event successfully", user: updatedUser,team:team.insertedId });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
   }
 });
+
 participantRouter.post("/register/qr/:event", async (req, res) => {
-  console.log("Reached QR registration endpoint", req.body,req.params);
-  try{
+  try {
     const userCollection = UserCollection();
     const { event } = req.params;
     const { userId } = req.body;
+    
+    if (!ObjectId.isValid(event) || !ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid event ID or user ID" });
+    }
+
     const eventCollection = db.collection('events');
 
-    const eventData = await eventCollection.findOne({ _id: new mongodb.ObjectId(event) });
+    const eventData = await eventCollection.findOne({ _id: new ObjectId(event) });
 
     if (!eventData) {
       return res.status(404).json({ error: "Event not found" });
     }
-    const exit=await db.collection(eventData.eventId).findOne({rollNumber:req.body.rollNumber});
-    if(exit){
-      return  res.status(400).json({ error: "User with this roll number already registered" });
+    
+    const existingRegistration = await db.collection(eventData.eventId).findOne({ rollNumber: req.body.rollNumber });
+    if (existingRegistration) {
+      return res.status(400).json({ error: "User with this roll number already registered" });
     }
-    const reg_user=await db.collection(eventData.eventId).insertOne({...req.body, userId: userId });
-     
-    axios.get(
-      QR_API + encodeURIComponent('https://dasho-backend.onrender.com/participant/user/'+event+"/" + reg_user.insertedId),
-      { responseType: 'stream' }
-    ).then(response => {
-      response.data.pipe(fs.createWriteStream(reg_user.insertedId + 'qrcode.png'));
-    }).catch(error => {
-      console.error('Error generating QR code:', error);
-      res.status(500).json({ error: "Error generating QR code" });
-    });
+    
+    const reg_user = await db.collection(eventData.eventId).insertOne({ ...req.body, userId: userId });
+    
+    const qrCodePath = reg_user.insertedId + 'qrcode.png';
+    const qrCodeUrl = QR_API_URL + encodeURIComponent(`${BACKEND_URL}/participant/user/${event}/${reg_user.insertedId}`);
+    
+    const response = await axios.get(qrCodeUrl, { responseType: 'stream' });
+    response.data.pipe(fs.createWriteStream(qrCodePath));
+    
     await userCollection.updateOne(
-      { _id: new mongodb.ObjectId(userId) },
+      { _id: new ObjectId(userId) },
       { $addToSet: { registeredEvents: eventData } }
     );
-    const user=await userCollection.findOne({ _id: new mongodb.ObjectId(userId) });
-    axios.post("https://7feej0sxm3.execute-api.eu-north-1.amazonaws.com/default/mail_sender",{
-      to:req.body.email,
-      subject:`Registration Successful for ${eventData.eventTitle}`,
-      html: `
-<div style="font-family: Arial, sans-serif; background-color: #000000; padding: 20px; color: #FFFFFF;">
-  <div style="max-width: 600px; margin: auto; background: #111111; border-radius: 12px; overflow: hidden; box-shadow: 0 0 15px rgba(255,255,255,0.1);">
     
-    <!-- Header -->
-    <div style="background-color: #000000; padding: 18px; text-align: center; border-bottom: 1px solid #222;">
-      <h1 style="margin: 0; font-size: 26px; letter-spacing: 1px;">
-        <a href="https://dashoo-p.vercel.app/" target="_blank" style="color: #FFFFFF; text-decoration: none;">Dasho</a>
-      </h1>
-    </div>
+    const user = await userCollection.findOne({ _id: new ObjectId(userId) });
+    
+    // Send email asynchronously
+    sendRegistrationEmail({ ...req.body, email: req.body.email }, eventData, qrCodePath)
+      .catch(err => console.error("Failed to send email:", err));
 
-    <!-- Main Content -->
-    <div style="padding: 25px; text-align: center; color: #E0E0E0;">
-      <h2 style="color: #FFFFFF;">Registration Successful 🎉</h2>
-      <p style="font-size: 16px; margin-bottom: 20px; color: #CCCCCC;">
-        Hello <strong style="color: #FFFFFF;">${req.body.name || "Participant"}</strong>,<br/>
-        You have been successfully registered for <strong style="color: #FFFFFF;">${eventData.eventTitle}</strong>.
-      </p>
-      <p style="font-size: 15px; color: #BBBBBB;">
-        Please use the attached <strong style="color: #FFFFFF;">QR Code</strong> for event check-in and check-out.
-      </p>
-      <div style="margin-top: 20px;">
-        <img src="https://dasho-backend.onrender.com/${reg_user.insertedId}qrcode.png" 
-             alt="QR Code" 
-             style="width: 180px; height: 180px; border-radius: 8px; border: 2px solid #FFFFFF;" />
-      </div>
-      <p style="margin-top: 25px; font-size: 14px; color: #888;">
-        Thank you for registering!<br/>
-        — The Dasho Event Team
-      </p>
-    </div>
-
-    <!-- Footer -->
-    <div style="background-color: #000000; border-top: 1px solid #222; text-align: center; padding: 12px; font-size: 13px; color: #777;">
-      <p style="margin: 0;">
-        © ${new Date().getFullYear()} <a href="https://dashoo-p.vercel.app/" target="_blank" style="color: #FFFFFF; text-decoration: none;">Dasho</a>
-      </p>
-    </div>
-  </div>
-</div>
-  `}).then(response => {
-      console.log('Email sent successfully:', response.data);
-      res.json({ message: "User registered and QR code generated successfully",registrationId:reg_user.insertedId, user });
-    }).catch(error => {
-      console.error('Error sending email:', error);
+    res.json({ 
+      message: "User registered and QR code generated successfully", 
+      registrationId: reg_user.insertedId, 
+      user 
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
-  catch(err){
+});
+participantRouter.get("/payment/hackthon/:eventId/:teamId", async (req, res) => {
+  try {
+    const { eventId, teamId } = req.params;
+    
+    if (!ObjectId.isValid(eventId) || !ObjectId.isValid(teamId)) {
+      return res.status(400).json({ error: "Invalid eventId or teamId" });
+    }
+
+    const eventCollection = db.collection('events');
+    const event = await eventCollection.findOne({ _id: new ObjectId(eventId) });
+    
+    if (!event) {
+      return res.status(404).json({ error: "Event not found" });
+    }
+
+    const team = await db.collection(event.eventId).findOne({ _id: new ObjectId(teamId) });
+    
+    if (!team) {
+      return res.status(404).json({ error: "Team not found" });
+    }
+    if(team.payment){
+      return res.status(400).json({ error: "Team already paid" });
+    }
+    
+    res.json({ name: event.eventTitle, cost: event.cost, payments: event.payments, team });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+participantRouter.post("/payment/hackthon/:eventId/:teamId", async (req, res) => {
+  try {
+    const { eventId, teamId } = req.params;
+    
+    if (!ObjectId.isValid(eventId) || !ObjectId.isValid(teamId)) {
+      return res.status(400).json({ error: "Invalid eventId or teamId" });
+    }
+
+    const eventCollection = db.collection('events');
+    const event = await eventCollection.findOne({ _id: new ObjectId(eventId) });
+    
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    const team = await db.collection(event.eventId).updateOne(
+      { _id: new ObjectId(teamId) },
+      { $set: { payment: true, paymentDetails: req.body } }
+    );
+    res.json({ message: "Payment successful", team });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+participantRouter.post("/payment/hackthon/:eventId/:teamId", async (req, res) => {
+  try {
+    const { eventId, teamId } = req.params;
+    
+    if (!ObjectId.isValid(eventId) || !ObjectId.isValid(teamId)) {
+      return res.status(400).json({ error: "Invalid eventId or teamId" });
+    }
+
+    const eventCollection = db.collection('events');
+    const event = await eventCollection.findOne({ _id: new ObjectId(eventId) });
+    
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    const team = await db.collection(event.eventId).updateOne(
+      { _id: new ObjectId(teamId) },
+      { $set: { payment: true, paymentDetails: req.body } }
+    );
+    res.json({ message: "Payment successful", team });
+  } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
+
 participantRouter.get("/user/:event/:userId", async (req, res) => {
   try {
     const { event, userId } = req.params;
-        const eventCollection = db.collection('events');
+    
+    if (!ObjectId.isValid(event) || !ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid event ID or user ID" });
+    }
 
-    console.log("Fetching user data for event:", event, "and userId:", userId);
-  const eventDoc = await eventCollection.findOne({ _id: new mongodb.ObjectId(event) });
-  if (!eventDoc) return res.status(404).json({ error: 'Event not found' });
-  const userCollection = db.collection(eventDoc.eventId);
-  const user = await userCollection.findOne({ _id: new mongodb.ObjectId(userId) });
+    const eventCollection = db.collection('events');
+
+    const eventDoc = await eventCollection.findOne({ _id: new ObjectId(event) });
+    if (!eventDoc) return res.status(404).json({ error: 'Event not found' });
+    
+    const userCollection = db.collection(eventDoc.eventId);
+    const user = await userCollection.findOne({ _id: new ObjectId(userId) });
+    
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
@@ -206,15 +279,21 @@ participantRouter.get("/user/:event/:userId", async (req, res) => {
 });
 
 participantRouter.get("/team/:event/:pass", async (req, res) => {
-  const {pass}=req.params;
   try {
+    const { event, pass } = req.params;
+    
+    if (!ObjectId.isValid(event)) {
+      return res.status(400).json({ error: "Invalid event ID" });
+    }
+
     const eventCollection = db.collection('events');
-    const { event } = req.params;
-    console.log("Fetching team data for event:", event, "and pass:", pass);
-    const eventDoc = await eventCollection.findOne({ _id: new mongodb.ObjectId(event) });
+    
+    const eventDoc = await eventCollection.findOne({ _id: new ObjectId(event) });
     if (!eventDoc) return res.status(404).json({ error: 'Event not found' });
+    
     const teamCollection = db.collection(eventDoc.eventId);
     const team = await teamCollection.findOne({ teamName: pass });
+    
     if (!team) return res.status(404).json({ error: 'Team not found' });
     res.json({ team });
   } catch (err) {
@@ -222,5 +301,42 @@ participantRouter.get("/team/:event/:pass", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+participantRouter.get("/dashboard/:event/:pass",async (req,res)=>{
+  const {event,pass}=req.params;
+  const event_g = await db.collection("events").findOne({ _id: new ObjectId(event) });
+  const team=await db.collection(event_g.eventId).findOne({password:pass});
+  if(!team){
+    return res.status(404).json({error:"Team not found"});
+  }
+  res.json({team,attd:event_g.attd,currAttd:event_g.currAttd});
+})
+participantRouter.post("/attd/:event/:pass",async (req,res)=>{
+  const {event,pass}=req.params;
+  const {participant,role}=req.body;
+  const event_g = await db.collection("events").findOne({ _id: new ObjectId(event) });
+  if(role == "lead"){
+    const team=await db.collection(event_g.eventId).updateOne({password:pass},{$set: {lead:participant}});
+        const updatedTeam=await db.collection(event_g.eventId).findOne({password:pass});
+    return res.json({team:updatedTeam});
+  }
 
+    const team=await db.collection(event_g.eventId).findOne({password:pass});
+    const members=team.members.map((member)=>{
+      if(member.name==participant.name){
+        member.attd={...participant.attd};
+      }
+      return member;
+    })
+    await db.collection(event_g.eventId).updateOne({password:pass},{$set :{members:members}});
+    console.log(updatedTeam)
+    return res.json({team:updatedTeam});
+  
+})
+participantRouter.post("/teamlogo/:event/:pass",async (req,res)=>{
+  const {event,pass}=req.params;
+  const {logo}=req.body;
+  const event_g = await db.collection("events").findOne({ _id: new ObjectId(event) });
+  const team=await db.collection(event_g.eventId).updateOne({password:pass},{$set: {logo:logo}});
+  return res.json({team});
+})
 export default participantRouter;

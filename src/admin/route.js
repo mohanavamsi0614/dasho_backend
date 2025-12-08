@@ -1,13 +1,11 @@
 import { Router } from "express";
-import mongodb from "mongodb";
-import { OrganizationCollection,db } from "../utils/db.js";
-import express from "express";
+import { OrganizationCollection, db } from "../utils/db.js";
+import { ObjectId } from "mongodb";
 import cors from "cors";
-
+import { sendWelcomeEmail } from "../utils/email.js";
 
 const adminRouter = Router();
-adminRouter.use(express.json());
-adminRouter.use(cors({origin: '*'}));
+adminRouter.use(cors({ origin: '*' }));
 
 adminRouter.post("/auth", async (req, res) => {
   try {
@@ -40,81 +38,229 @@ adminRouter.post("/register", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+adminRouter.post("/payment/hackthon/verify/:eventId/:userId", async (req, res) => {
+  try {
+    const { eventId, userId } = req.params;
+    const {members,teamName}=req.body;
+    
+    if (!ObjectId.isValid(eventId) || !ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid eventId or userId" });
+    }
 
+    const eventCollection = db.collection('events');
+    const event = await eventCollection.findOne({ _id: new ObjectId(eventId) });
+    
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    const user = await db.collection(event.eventId).updateOne(
+      { _id: new ObjectId(userId) },
+      { $set: { verified:true } }
+    );
+    sendWelcomeEmail(members,event,teamName)
+    res.json({ message: "verifed successful", user });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+adminRouter.post("/hackthon/round/create/:eventId", async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { round } = req.body;
+    
+    if (!ObjectId.isValid(eventId)) {
+      return res.status(400).json({ error: "Invalid eventId" });
+    }
+    
+    const eventCollection = db.collection('events');
+    const event = await eventCollection.updateOne({ _id: new ObjectId(eventId) }, { $push: { rounds:req.body.round } }, { upsert: true });
+    if (!event) return res.status(404).json({ error: "Event not found" });
+    
+    res.json({ message: "Round created successfully", round });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+adminRouter.put("/hackthon/round/update/:eventId/:roundId", async (req, res) => {
+  try {
+    const { eventId, roundId } = req.params;
+    const { round } = req.body;
+    
+    if (!ObjectId.isValid(eventId) || !ObjectId.isValid(roundId)) {
+      return res.status(400).json({ error: "Invalid eventId or roundId" });
+    }
+    
+    const eventCollection = db.collection('events');
+    const event = await eventCollection.updateOne({ _id: new ObjectId(eventId), "rounds._id": new ObjectId(roundId) }, { $set: { "rounds.$": { round } } });
+    if (!event) return res.status(404).json({ error: "Event or round not found" });
+    
+    res.json({ message: "Round updated successfully", round });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+adminRouter.delete("/hackthon/round/delete/:eventId/:roundId", async (req, res) => {
+  try {
+    const { eventId, roundId } = req.params;
+    
+    if (!ObjectId.isValid(eventId) || !ObjectId.isValid(roundId)) {
+      return res.status(400).json({ error: "Invalid eventId or roundId" });
+    }
+    
+    const eventCollection = db.collection('events');
+    const event = await eventCollection.updateOne({ _id: new ObjectId(eventId) }, { $pull: { rounds: { _id: new ObjectId(roundId) } } });
+    if (!event) return res.status(404).json({ error: "Event or round not found" });
+    
+    res.json({ message: "Round deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 adminRouter.post("/event", async (req, res) => {
   try {
-    const {body}= req;
-    const {orgId}= req.body;
-    console.log(body);
+    const { body } = req;
+    const { orgId } = req.body;
+    
+    if (!ObjectId.isValid(orgId)) {
+      return res.status(400).json({ error: "Invalid orgId" });
+    }
+
     const orgCollection = OrganizationCollection();
-    const org = await orgCollection.findOne({ _id:new  mongodb.ObjectId(orgId) });
-    console.log(org);
-    await db.collection(`${org.orgName}-${body.eventTitle}`).insertOne({"status": "created"});
-    const event=await db.collection('events').insertOne({...body,by:org,eventId:org.orgName+'-'+body.eventTitle});
-    const updatedOrg = await orgCollection.updateOne(
-      { _id: new mongodb.ObjectId(orgId) },
-      { $push: { events: { ...body,_id:event.insertedId } } }
-      
+    const org = await orgCollection.findOne({ _id: new ObjectId(orgId) });
+    
+    await db.collection(`${org.orgName.split(" ").join("_")}-${body.eventTitle.split(" ").join("_")}`).insertOne({ "status": "created" });
+    const event = await db.collection('events').insertOne({ ...body, by: org, eventId: org.orgName.split(" ").join("_") + '-' + body.eventTitle.split(" ").join("_") });
+    
+    await orgCollection.updateOne(
+      { _id: new ObjectId(orgId) },
+      { $push: { events: { ...body, _id: event.insertedId } } }
     );
-    const eve=await orgCollection.findOne({ _id:new  mongodb.ObjectId(orgId) });
-    res.json({ message: "Event created successfully", event: eve ,org:eve});
+    
+    const eve = await orgCollection.findOne({ _id: new ObjectId(orgId) });
+    res.json({ message: "Event created successfully", event: eve, org: eve });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-adminRouter.get("/event/:id",async(req,res)=>{
-  const {id}=req.params
-  const event=await db.collection('events').findOne({_id:new mongodb.ObjectId(id)})
-  const event_og=await db.collection(event.eventId).find({}).toArray()
-  res.json({event,event_og})
-})
-adminRouter.post("/event/status/:eventId",async(req,res)=>{
-  const {eventId}=req.params
-  const {status}=req.body
-  await db.collection('events').updateOne({_id:new mongodb.ObjectId(eventId)},{$set:{status:status}})
-  const event=await db.collection('events').findOne({_id:new mongodb.ObjectId(eventId)})
-  const event_og=await db.collection(event.eventId).find({}).toArray()
-  res.json({message:"Event status updated",event,event_og})
-})
-adminRouter.post("/event/qr/:event",async(req,res)=>{
-  const {event} =req.params
-  console.log("event param",event)
-  const {userId,status,time}=req.body
-console.log("userId,status,time",userId,status,time)
-const event_g=await db.collection("events").findOne({_id:new mongodb.ObjectId(event)})
-console.log("event_g",event_g)
-  const ogevent=await db.collection(event_g.eventId)
-  const user=await ogevent.findOne({_id:new mongodb.ObjectId(userId)})
-  console.log(user)
-  if(status=="checkin"){
-    await ogevent.updateOne({_id:new mongodb.ObjectId(userId)},{$push:{checkin:time}})
-    res.json({message:"Check-in recorded"})
+adminRouter.get("/event/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "Invalid event ID" });
+    }
+
+    const event = await db.collection('events').findOne({ _id: new ObjectId(id) });
+    if (!event) return res.status(404).json({ error: "Event not found" });
+    
+    const event_og = await db.collection(event.eventId).find({}).toArray();
+    res.json({ event, event_og });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
-  else{
-    await ogevent.updateOne({_id:new mongodb.ObjectId(userId)},{$push:{checkout:time}})
-    res.json({message:"Check-out recorded"})
+});
+
+adminRouter.post("/event/status/:eventId", async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { status } = req.body;
+    
+    if (!ObjectId.isValid(eventId)) {
+      return res.status(400).json({ error: "Invalid eventId" });
+    }
+
+    await db.collection('events').updateOne({ _id: new ObjectId(eventId) }, { $set: { status: status } });
+    const event = await db.collection('events').findOne({ _id: new ObjectId(eventId) });
+    const event_og = await db.collection(event.eventId).find({}).toArray();
+    res.json({ message: "Event status updated", event, event_og });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
-})
+});
 
-adminRouter.post("/attd/:event/:team",async(req,res)=>{
-  console.log("Reached attendance endpoint", req.body,req.params);
-  const {event,team}=req.params
-  const {lead,members}=req.body
-  const event_g=await db.collection("events").findOne({_id:new mongodb.ObjectId(event)})
-  const ogevent=await db.collection(event_g.eventId)
-  const teamData=await ogevent.updateOne({_id:new mongodb.ObjectId(team)},{$set:{lead:lead,members:members}})
-  res.json({message:"Attendance recorded",teamData})
-})
+adminRouter.post("/event/qr/:event", async (req, res) => {
+  try {
+    const { event } = req.params;
+    const { userId, status, time } = req.body;
+    
+    if (!ObjectId.isValid(event) || !ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid event ID or user ID" });
+    }
+    
+    const event_g = await db.collection("events").findOne({ _id: new ObjectId(event) });
+    if (!event_g) return res.status(404).json({ error: "Event not found" });
+    
+    const ogevent = await db.collection(event_g.eventId);
+    
+    if (status == "checkin") {
+      await ogevent.updateOne({ _id: new ObjectId(userId) }, { $push: { checkin: time } });
+      res.json({ message: "Check-in recorded" });
+    } else {
+      await ogevent.updateOne({ _id: new ObjectId(userId) }, { $push: { checkout: time } });
+      res.json({ message: "Check-out recorded" });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
-adminRouter.post("/marks/:event/:team",async(req,res)=>{
-  const {event,team}=req.params
-  const {marks}=req.body
-  const event_g=await db.collection("events").findOne({_id:new mongodb.ObjectId(event)})
-  const ogevent=await db.collection(event_g.eventId)
-  const teamData=await ogevent.updateOne({_id:team},{$set:{marks:marks}})
-  res.json({message:"Marks recorded"})
-})
+adminRouter.post("/marks/:event/:team", async (req, res) => {
+  try {
+    const { event, team } = req.params;
+    const { marks } = req.body;
+    
+    if (!ObjectId.isValid(event) || !ObjectId.isValid(team)) {
+      return res.status(400).json({ error: "Invalid event ID or team ID" });
+    }
 
+    const event_g = await db.collection("events").findOne({ _id: new ObjectId(event) });
+    if (!event_g) return res.status(404).json({ error: "Event not found" });
+    
+    const ogevent = await db.collection(event_g.eventId);
+    await ogevent.updateOne({ _id: new ObjectId(team) }, { $push: { marks: marks } });
+    res.json({ message: "Marks recorded" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+adminRouter.post("/hack/attd/create/:event",async(req,res)=>{
+    try {
+        const {event}=req.params;
+        const event_g = await db.collection("events").findOne({ _id: new ObjectId(event) });
+        if(event_g.attd){
+            event_g.attd.push(`attd_${event_g.attd.length+1}`)
+        }
+        else{
+        event_g.attd=[`attd_1`]
+        }
+        await db.collection("events").updateOne({ _id: new ObjectId(event) }, { $set: { attd: event_g.attd } });
+        res.json({message:"Attendance created successfully",event:event_g})
+    } catch (error) {
+        console.log(error)
+        res.json({message:"Attendance not created"})
+    }
+})
+adminRouter.post("/hack/attd/:event/:team",async(req,res)=>{
+    try {
+        const {event,team}=req.params;
+        const {lead,members}=req.body;
+        const event_g = await db.collection("events").findOne({ _id: new ObjectId(event) });
+        const ogevent = await db.collection(event_g.eventId);
+        const teamData = await ogevent.updateOne({ _id: new ObjectId(team) }, { $set: {lead,members } });
+        res.json({ message: "Attendance recorded", teamData });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
+    }
+})
 export default adminRouter;
