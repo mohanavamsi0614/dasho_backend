@@ -16,7 +16,6 @@ export const initSocket = (server) => {
             console.log("user disconnected");
         });
         socket.on("join",(data)=>{
-            console.log(socket.id +"connected to "+data.join(" "))
             socket.join(data)
         })
         socket.on("openEvent",async (data)=>{
@@ -30,29 +29,39 @@ export const initSocket = (server) => {
         })
         socket.on("regCheck",async (data)=>{
             const {eventId}=data;
-            const event=await db.collection(eventId).findOne({_id:new ObjectId(eventId)})
+            console.log(data)
+            const event=await db.collection("events").findOne({_id:new ObjectId(eventId)})
+            console.log(event)
             if(event.maxTeams<=event.teams.length){
                 await db.collection("events").updateOne({_id:new ObjectId(eventId)},{$set:{status:"closed"}})
                 io.to(eventId).emit("eventClosed","event closed")
             }
         })
-        socket.on("currAttd",async (eventId)=>{
-            console.log(eventId)
-            const event=await db.collection("events").findOne({_id:new ObjectId(eventId)})
-            io.to(eventId).emit("currAttd",event.currAttd)
+        socket.on("currAttd",async (data)=>{
+            const event=await db.collection("events").findOne({_id:new ObjectId(data.eventId)}).currAttd || ""
+            io.to(data.teamId).emit("currAttd",event)
         })
         socket.on("changeAttd",(id,eventId)=>{
-            console.log(id,eventId)
             db.collection("events").updateOne({_id:new ObjectId(eventId)},{$set:{currAttd:id}})
             io.to(eventId).emit("currAttd",id)
         })
         socket.on("attd",async (data)=>{
             const {event,team,lead,members}=data
+            console.log(data)
             const event_g = await db.collection("events").findOne({ _id: new ObjectId(event) });
             const ogevent = await db.collection(event_g.eventId);
             await ogevent.updateOne({ _id: new ObjectId(team) }, { $set: {lead,members } });
             const teamData =await ogevent.findOne({_id:new ObjectId(team)})
             io.to(team).emit("attd",teamData);
+        })
+        socket.on("update",(data)=>{
+            db.collection("events").updateOne({_id:new ObjectId(data.id)},{$set:{update:data.data}})
+            io.to(data.id).emit("update",data.data)
+        })
+        socket.on("getUpdate",async (data)=>{
+            console.log(data)
+            const update=await db.collection("events").findOne({_id:new ObjectId(data.eventId)}) 
+            io.to(data.teamId).emit("updateOn","<h1>No Updates</h1>")
         })
     })
 

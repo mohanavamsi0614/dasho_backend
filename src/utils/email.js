@@ -57,15 +57,21 @@ export const sendRegistrationEmail = async (user, eventData, qrCodePath) => {
 
 export const sendPaymentEmail= async (user,eventData,teamName,paymentLink)=>{
   try{
+    console.log(user)
     const response=await axios.post(EMAIL_SERVICE_URL,{
       to:user.email,
       subject:`Payment for ${eventData.eventTitle}`,
       html:`
       <h1>Payment Mail</h1>
+      <p>Hi ${user.name},</p>
+      <p>Thank you for registering for ${eventData.eventTitle}. Please make the payment of ${eventData.eventFee} to ${eventData.eventBank}.</p>
+      <p>Payment Link: <a href="${paymentLink}">${paymentLink}</a></p>
       `
     })
+    console.log(response.data)
   }
-  catch{
+  catch (e){
+    console.log("error",e)
 
   }
 }

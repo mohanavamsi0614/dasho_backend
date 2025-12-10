@@ -78,7 +78,8 @@ participantRouter.post("/register/hackathon/:event", async (req, res) => {
     if (!ObjectId.isValid(req.params.event) || !ObjectId.isValid(userId)) {
       return res.status(400).json({ error: "Invalid event ID or user ID" });
     }
-
+    
+    
     const event = await eventCollection.findOne({ _id: new ObjectId(req.params.event) });
     const userCollection = UserCollection();
     const user = await userCollection.findOne({ _id: new ObjectId(userId) });
@@ -88,19 +89,28 @@ participantRouter.post("/register/hackathon/:event", async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
-    if (event.maxTeams < (event?.teams?.length || 1)) {
+    if (event.maxTeams <= (event?.teams?.length || 0)) {
       return res.status(400).json({ error: "Event is full" });
+    }
+    if (!event.eventId) {
+      return res.status(500).json({ error: "Event data corrupted: missing eventId" });
     }
     const check=await db.collection(event.eventId).findOne({teamName:req.body.teamName.toLowerCase()})
     if(check){
       return res.status(400).json({ error: "Team name already exists" });
     }
     
+    
+    const safeLeadName = req.body.lead?.name || "";
+    const password = (req.body.teamName?.toLowerCase().slice(1) || "") + 
+                     (safeLeadName.replace(/\s/g, "").slice(4) || "");
+
     const team = await db.collection(event.eventId).insertOne({ 
       ...req.body, 
       userId: userId, 
       userName: user.name, 
-      payment: false 
+      payment: false,
+      password: password 
     });
     
     await eventCollection.updateOne(
@@ -114,7 +124,7 @@ participantRouter.post("/register/hackathon/:event", async (req, res) => {
     );
     
     const updatedUser = await userCollection.findOne({ _id: new ObjectId(userId) });
-    sendPaymentEmail(req.body.lead,event,req.body.teamName,`https://daso_p.vercel.app/payment/${event.eventId}/${team.insertedId}`)
+    sendPaymentEmail(req.body.lead,event,req.body.teamName,`https://dasho_p.vercel.app/payment/${event.eventId}/${team.insertedId}`)
     res.json({ message: "User registered for event successfully", user: updatedUser,team:team.insertedId });
   } catch (err) {
     console.error(err);
@@ -138,6 +148,9 @@ participantRouter.post("/register/qr/:event", async (req, res) => {
 
     if (!eventData) {
       return res.status(404).json({ error: "Event not found" });
+    }
+    if (!eventData.eventId) {
+      return res.status(500).json({ error: "Event data corrupted: missing eventId" });
     }
     
     const existingRegistration = await db.collection(eventData.eventId).findOne({ rollNumber: req.body.rollNumber });
@@ -177,6 +190,7 @@ participantRouter.post("/register/qr/:event", async (req, res) => {
 participantRouter.get("/payment/hackthon/:eventId/:teamId", async (req, res) => {
   try {
     const { eventId, teamId } = req.params;
+    console.log(req.params)
     
     if (!ObjectId.isValid(eventId) || !ObjectId.isValid(teamId)) {
       return res.status(400).json({ error: "Invalid eventId or teamId" });
@@ -184,9 +198,11 @@ participantRouter.get("/payment/hackthon/:eventId/:teamId", async (req, res) => 
 
     const eventCollection = db.collection('events');
     const event = await eventCollection.findOne({ _id: new ObjectId(eventId) });
-    
     if (!event) {
       return res.status(404).json({ error: "Event not found" });
+    }
+    if (!event.eventId) {
+      return res.status(500).json({ error: "Event data corrupted: missing eventId" });
     }
 
     const team = await db.collection(event.eventId).findOne({ _id: new ObjectId(teamId) });
@@ -216,6 +232,7 @@ participantRouter.post("/payment/hackthon/:eventId/:teamId", async (req, res) =>
     const event = await eventCollection.findOne({ _id: new ObjectId(eventId) });
     
     if (!event) return res.status(404).json({ error: "Event not found" });
+    if (!event.eventId) return res.status(500).json({ error: "Event data corrupted: missing eventId" });
 
     const team = await db.collection(event.eventId).updateOne(
       { _id: new ObjectId(teamId) },
@@ -264,6 +281,7 @@ participantRouter.get("/user/:event/:userId", async (req, res) => {
 
     const eventDoc = await eventCollection.findOne({ _id: new ObjectId(event) });
     if (!eventDoc) return res.status(404).json({ error: 'Event not found' });
+    if (!eventDoc.eventId) return res.status(500).json({ error: "Event data corrupted: missing eventId" });
     
     const userCollection = db.collection(eventDoc.eventId);
     const user = await userCollection.findOne({ _id: new ObjectId(userId) });
@@ -290,6 +308,7 @@ participantRouter.get("/team/:event/:pass", async (req, res) => {
     
     const eventDoc = await eventCollection.findOne({ _id: new ObjectId(event) });
     if (!eventDoc) return res.status(404).json({ error: 'Event not found' });
+    if (!eventDoc.eventId) return res.status(500).json({ error: "Event data corrupted: missing eventId" });
     
     const teamCollection = db.collection(eventDoc.eventId);
     const team = await teamCollection.findOne({ teamName: pass });
@@ -304,6 +323,8 @@ participantRouter.get("/team/:event/:pass", async (req, res) => {
 participantRouter.get("/dashboard/:event/:pass",async (req,res)=>{
   const {event,pass}=req.params;
   const event_g = await db.collection("events").findOne({ _id: new ObjectId(event) });
+  if (!event_g) return res.status(404).json({ error: "Event not found" });
+  if (!event_g.eventId) return res.status(500).json({ error: "Event data corrupted: missing eventId" });
   const team=await db.collection(event_g.eventId).findOne({password:pass});
   if(!team){
     return res.status(404).json({error:"Team not found"});
@@ -314,6 +335,8 @@ participantRouter.post("/attd/:event/:pass",async (req,res)=>{
   const {event,pass}=req.params;
   const {participant,role}=req.body;
   const event_g = await db.collection("events").findOne({ _id: new ObjectId(event) });
+  if (!event_g) return res.status(404).json({ error: "Event not found" });
+  if (!event_g.eventId) return res.status(500).json({ error: "Event data corrupted: missing eventId" });
   if(role == "lead"){
     const team=await db.collection(event_g.eventId).updateOne({password:pass},{$set: {lead:participant}});
         const updatedTeam=await db.collection(event_g.eventId).findOne({password:pass});
@@ -336,6 +359,8 @@ participantRouter.post("/teamlogo/:event/:pass",async (req,res)=>{
   const {event,pass}=req.params;
   const {logo}=req.body;
   const event_g = await db.collection("events").findOne({ _id: new ObjectId(event) });
+  if (!event_g) return res.status(404).json({ error: "Event not found" });
+  if (!event_g.eventId) return res.status(500).json({ error: "Event data corrupted: missing eventId" });
   const team=await db.collection(event_g.eventId).updateOne({password:pass},{$set: {logo:logo}});
   return res.json({team});
 })
