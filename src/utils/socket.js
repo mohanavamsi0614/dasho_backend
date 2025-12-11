@@ -55,13 +55,13 @@ export const initSocket = (server) => {
             io.to(team).emit("attd",teamData);
         })
         socket.on("update",(data)=>{
-            db.collection("events").updateOne({_id:new ObjectId(data.id)},{$set:{update:data.data}})
-            io.to(data.id).emit("update",data.data)
+            console.log(data)
+            db.collection("events").updateOne({_id:new ObjectId(data.id)},{$set:{update:data.update}})
+            io.to(data.id).emit("updateOn",data.update)
         })
         socket.on("getUpdate",async (data)=>{
-            console.log(data)
             const update=await db.collection("events").findOne({_id:new ObjectId(data.eventId)}) 
-            io.to(data.teamId).emit("updateOn","<h1>No Updates</h1>")
+            io.to(data.teamId).emit("updateOn",update.update)
         })
     })
 
