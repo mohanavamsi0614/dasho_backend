@@ -3,6 +3,7 @@ import { OrganizationCollection, db } from "../utils/db.js";
 import { ObjectId } from "mongodb";
 import cors from "cors";
 import { sendWelcomeEmail } from "../utils/email.js";
+import cache from "../cache/inmemory_cache.js";
 
 const adminRouter = Router();
 adminRouter.use(cors({ origin: '*' }));
@@ -140,6 +141,7 @@ adminRouter.post("/event", async (req, res) => {
     );
     
     const eve = await orgCollection.findOne({ _id: new ObjectId(orgId) });
+    cache.del("all_events");
     res.json({ message: "Event created successfully", event: eve, org: eve });
   } catch (err) {
     console.error(err);
@@ -177,6 +179,10 @@ adminRouter.post("/event/status/:eventId", async (req, res) => {
 
     await db.collection('events').updateOne({ _id: new ObjectId(eventId) }, { $set: { status: status } });
     const event = await db.collection('events').findOne({ _id: new ObjectId(eventId) });
+    if (event && event.eventId) {
+        cache.del(`event_${event.eventId}`);
+    }
+    cache.del("all_events");
     const event_og = await db.collection(event.eventId).find({}).toArray();
     res.json({ message: "Event status updated", event, event_og });
   } catch (err) {

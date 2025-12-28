@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { UserCollection, db } from "../utils/db.js";
+import cache from "../cache/inmemory_cache.js";
 import { ObjectId } from "mongodb";
 import axios from "axios";
 import fs from "fs";
@@ -50,8 +51,16 @@ participantRouter.post("/register", async (req, res) => {
 participantRouter.get("/eventdata/:eventId", async (req, res) => {
   try {
     const { eventId } = req.params;
+    const cachedEvent = cache.get(`event_${eventId}`);
+    if (cachedEvent) {
+        console.log("Serving from cache: event_" + eventId);
+        return res.json(cachedEvent);
+    }
     const orgCollection = db.collection('events');
     const eventData = await orgCollection.findOne({ eventId: eventId });
+    if (eventData) {
+        cache.put(`event_${eventId}`, eventData);
+    }
     res.json(eventData);
   } catch (err) {
     console.error(err);
@@ -62,6 +71,7 @@ participantRouter.get("/eventdata/:eventId", async (req, res) => {
 participantRouter.get("/eventslist", async (req, res) => {
   try {
     const events = await db.collection('events').find({}).toArray();
+    cache.put("all_events", events);
     res.json({ events });
   } catch (err) {
     console.error(err);
