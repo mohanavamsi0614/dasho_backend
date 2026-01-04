@@ -37,7 +37,7 @@ export const getRegistrationEmailTemplate = (user, eventData, qrCodePath) => {
         Please use the attached <strong style="color: #FFFFFF;">QR Code</strong> for event check-in and check-out.
       </p>
       <div style="margin-top: 20px;">
-        <img src="${BACKEND_URL}/${qrCodePath}" 
+        <img src="${qrCodePath}" 
              alt="QR Code" 
              style="width: 180px; height: 180px; border-radius: 8px; border: 2px solid #FFFFFF;" />
       </div>
