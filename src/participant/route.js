@@ -5,8 +5,8 @@ import { ObjectId } from "mongodb";
 import axios from "axios";
 import fs from "fs";
 import cors from "cors";
-import { QR_API_URL, BACKEND_URL } from "../config.js";
-import { sendPaymentEmail, sendRegistrationEmail } from "../utils/email.js";
+import { QR_API_URL, BACKEND_URL, FRONTEND_URL } from "../config.js";
+import { sendPaymentEmail, sendRegistrationEmail, sendWelcomeEmail } from "../utils/email.js";
 
 const participantRouter = Router();
 participantRouter.use(cors({ origin: '*' }));
@@ -71,7 +71,6 @@ participantRouter.get("/eventdata/:eventId", async (req, res) => {
 participantRouter.get("/eventslist", async (req, res) => {
   try {
     const events = await db.collection('events').find({}).toArray();
-    cache.put("all_events", events);
     res.json({ events });
   } catch (err) {
     console.error(err);
@@ -134,15 +133,23 @@ participantRouter.post("/register/hackathon/:event", async (req, res) => {
     );
     
     const updatedUser = await userCollection.findOne({ _id: new ObjectId(userId) });
-    sendPaymentEmail(req.body.lead,event,req.body.teamName,`https://dasho_p.vercel.app/payment/${event.eventId}/${team.insertedId}`)
-    res.json({ message: "User registered for event successfully", user: updatedUser,team:team.insertedId });
+    if(event.cost && event.auto_payment_mail){
+    sendPaymentEmail(req.body.lead,event,req.body.teamName,`https://dashoo-p.vercel.app/payment/${event.eventId}/${team.insertedId}`)
+    return res.json({ message: "Registered for event successfully and please check the payment mail sent", user: updatedUser,team:team.insertedId ,payment:true,mail:true });
+    }
+    else if(event.cost && !event.auto_payment_mail){
+      return res.json({ message: "Registered for event successfully and we will send payment mail to you shortly ", user: updatedUser,team:team.insertedId ,payment:false,mail:false });
+    }
+    else{
+      sendWelcomeEmail([...req.body.lead.email,...req.body.members.map((member)=>member.email),event.email],event,req.body.teamName)
+      return res.json({ message: "User registered for event successfully and welcome mail sent", user: updatedUser,team:team.insertedId ,payment:false,mail:true });
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
   }
 });
-
-participantRouter.post("/register/qr/:event", async (req, res) => {
+participantRouter.post("/register/qr/:event",async (req, res) => {
   try {
     const userCollection = UserCollection();
     const { event } = req.params;
@@ -163,40 +170,142 @@ participantRouter.post("/register/qr/:event", async (req, res) => {
       return res.status(500).json({ error: "Event data corrupted: missing eventId" });
     }
     
+    const currentRegistrations = await db.collection(eventData.eventId).countDocuments();
+    const limit = eventData.capacity;
+    console.log(limit,currentRegistrations)
+    if (limit && currentRegistrations >= limit) {
+        return res.status(400).json({ error: "Event is full" });
+    }
+
     const existingRegistration = await db.collection(eventData.eventId).findOne({ rollNumber: req.body.rollNumber });
     if (existingRegistration) {
       return res.status(400).json({ error: "User with this roll number already registered" });
     }
-    
-    const reg_user = await db.collection(eventData.eventId).insertOne({ ...req.body, userId: userId });
-    
-    const qrCodePath = reg_user.insertedId + 'qrcode.png';
-    const qrCodeUrl = QR_API_URL + encodeURIComponent(`${BACKEND_URL}/participant/user/${event}/${reg_user.insertedId}`);
-    
-    const response = await axios.get(qrCodeUrl, { responseType: 'stream' });
-    response.data.pipe(fs.createWriteStream(qrCodePath));
-    
-    await userCollection.updateOne(
-      { _id: new ObjectId(userId) },
-      { $addToSet: { registeredEvents: eventData } }
-    );
-    
-    const user = await userCollection.findOne({ _id: new ObjectId(userId) });
-    
-    // Send email asynchronously
-    sendRegistrationEmail({ ...req.body, email: req.body.email }, eventData, qrCodePath)
-      .catch(err => console.error("Failed to send email:", err));
 
-    res.json({ 
-      message: "User registered and QR code generated successfully", 
-      registrationId: reg_user.insertedId, 
-      user 
-    });
+    if (eventData.cost && eventData.cost > 0) {
+        const reg_user = await db.collection(eventData.eventId).insertOne({ 
+            ...req.body, 
+            userId: userId,
+            payment: false,
+            verified: false
+        });
+
+        await userCollection.updateOne(
+          { _id: new ObjectId(userId) },
+          { $addToSet: { registeredEvents: eventData } }
+        );
+
+        const user = await userCollection.findOne({ _id: new ObjectId(userId) });
+        const paymentLink = `${FRONTEND_URL}/payment/${event}/${reg_user.insertedId}`;
+        
+        // Send payment email
+        sendPaymentEmail(
+            {...req.body, email: req.body.email}, 
+            eventData, 
+            req.body.name, // Using name as teamName for individual
+            paymentLink
+        ).catch(err => console.error("Failed to send payment email:", err));
+
+        return res.json({ 
+            message: "Registration successful. Please complete payment.", 
+            registrationId: reg_user.insertedId, 
+            paymentRequired: true,
+            user 
+        });
+
+    } else {
+        const reg_user = await db.collection(eventData.eventId).insertOne({ ...req.body, userId: userId });
+        
+        const qrCodePath = reg_user.insertedId + 'qrcode.png';
+        const qrCodeUrl = QR_API_URL + encodeURIComponent(`${BACKEND_URL}/participant/user/${event}/${reg_user.insertedId}`);
+        
+        const response = await axios.get(qrCodeUrl, { responseType: 'stream' });
+        response.data.pipe(fs.createWriteStream(qrCodePath));
+        
+        await userCollection.updateOne(
+          { _id: new ObjectId(userId) },
+          { $addToSet: { registeredEvents: eventData } }
+        );
+        
+        const user = await userCollection.findOne({ _id: new ObjectId(userId) });
+        
+        // Send email asynchronously
+        sendRegistrationEmail({ ...req.body, email: req.body.email }, eventData, qrCodePath)
+          .catch(err => console.error("Failed to send email:", err));
+
+        res.json({ 
+          message: "User registered and QR code generated successfully", 
+          registrationId: reg_user.insertedId, 
+          user 
+        });
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
   }
 });
+participantRouter.get("/payment/qr/:eventId/:userId", async (req, res) => {
+    try {
+      const { eventId, userId } = req.params;
+      
+      if (!ObjectId.isValid(eventId) || !ObjectId.isValid(userId)) {
+        return res.status(400).json({ error: "Invalid eventId or userId" });
+      }
+  
+      const eventCollection = db.collection('events');
+      const event = await eventCollection.findOne({ _id: new ObjectId(eventId) });
+      if (!event) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      if (!event.eventId) {
+        return res.status(500).json({ error: "Event data corrupted: missing eventId" });
+      }
+  
+      const user = await db.collection(event.eventId).findOne({ _id: new ObjectId(userId) });
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if(user.payment){
+        return res.status(400).json({ error: "User already paid" });
+      }
+      
+      res.json({ name: event.eventTitle, cost: event.cost, payments: event.payments, user });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+  
+  participantRouter.post("/payment/qr/:eventId/:userId", async (req, res) => {
+    try {
+      const { eventId, userId } = req.params;
+      
+      if (!ObjectId.isValid(eventId) || !ObjectId.isValid(userId)) {
+        return res.status(400).json({ error: "Invalid eventId or userId" });
+      }
+  
+      const eventCollection = db.collection('events');
+      const event = await eventCollection.findOne({ _id: new ObjectId(eventId) });
+      
+      if (!event) return res.status(404).json({ error: "Event not found" });
+      if (!event.eventId) return res.status(500).json({ error: "Event data corrupted: missing eventId" });
+  
+      const result = await db.collection(event.eventId).updateOne(
+        { _id: new ObjectId(userId) },
+        { $set: { payment: true, paymentDetails: req.body } }
+      );
+      
+      if (result.matchedCount === 0) {
+          return res.status(404).json({ error: "User record not found" });
+      }
+
+      res.json({ message: "Payment successful" });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Server error" });
+    }
+  });
 participantRouter.get("/payment/hackthon/:eventId/:teamId", async (req, res) => {
   try {
     const { eventId, teamId } = req.params;

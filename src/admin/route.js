@@ -2,8 +2,18 @@ import { Router } from "express";
 import { OrganizationCollection, db } from "../utils/db.js";
 import { ObjectId } from "mongodb";
 import cors from "cors";
-import { sendWelcomeEmail } from "../utils/email.js";
+import { sendWelcomeEmail, sendRegistrationEmail, sendPaymentEmail } from "../utils/email.js";
 import cache from "../cache/inmemory_cache.js";
+import { QR_API_URL, BACKEND_URL } from "../config.js";
+import axios from "axios";
+import fs from "fs";
+import cloudinary from "cloudinary";
+
+cloudinary.v2.config({
+    cloud_name: "dus9hgplo",
+    api_key: "425457398647798",
+    api_secret: "iwQUejWLH6PHPa5uPX_E96jw-lc"
+})
 
 const adminRouter = Router();
 adminRouter.use(cors({ origin: '*' }));
@@ -59,6 +69,56 @@ adminRouter.post("/payment/hackthon/verify/:eventId/:userId", async (req, res) =
     );
     sendWelcomeEmail(members,event,teamName)
     res.json({ message: "verifed successful", user });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+adminRouter.post("/payment_remider/:event/:userId",async (req,res)=>{
+  try {
+    const {event,userId}=req.params;
+    const eventCollection=db.collection('events');
+    const eventdata=await eventCollection.findOne({_id:new ObjectId(event)})
+    const email=await db.collection(eventdata.eventId).findOne({_id:new ObjectId(userId)})
+    console.log(email)
+    sendPaymentEmail(email,eventdata,email.lead.email,email.teamName,`https://dasho_p.vercel.app/payment/${eventdata.eventId}/${email._id}`)
+    res.json({message:"Payment reminder sent successfully"})
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({error:"Server error"})
+    
+  }
+})
+
+adminRouter.post("/payment/qr/verify/:eventId/:userId", async (req, res) => {
+  try {
+    const { eventId, userId } = req.params;
+    
+    if (!ObjectId.isValid(eventId) || !ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid eventId or userId" });
+    }
+
+    const eventCollection = db.collection('events');
+    const eventData = await eventCollection.findOne({ _id: new ObjectId(eventId) });
+    
+    if (!eventData) return res.status(404).json({ error: "Event not found" });
+
+    const user = await db.collection(eventData.eventId).findOne({ _id: new ObjectId(userId) });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    await db.collection(eventData.eventId).updateOne(
+      { _id: new ObjectId(userId) },
+      { $set: { verified: true } }
+    );
+
+    const qrCodeUrl = QR_API_URL + encodeURIComponent(`${BACKEND_URL}/participant/user/${eventId}/${userId}`);
+    const img=await axios.get(qrCodeUrl,{responseType:'arraybuffer'})
+    const qrCodeBuffer=Buffer.from(img.data,'binary')
+    const qrCodePath = user._id + 'qrcode.png';
+    fs.writeFileSync(qrCodePath,qrCodeBuffer)
+    const em_qrCodeUrl = await cloudinary.v2.uploader.upload(qrCodePath, { folder: 'qrcodes' })
+    sendRegistrationEmail({ ...user, email: user.email }, eventData, em_qrCodeUrl.secure_url)
+    res.json({ message: "Verified successful", user });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });

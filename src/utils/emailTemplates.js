@@ -61,7 +61,7 @@ export const getPaymentEmailTemplate = (user, eventData, teamName, paymentLink) 
         Thank you for registering for <strong style="color: #FFFFFF;">${eventData.eventTitle}</strong>.
       </p>
       <p style="font-size: 15px; color: #BBBBBB;">
-        To complete your registration for team <strong style="color: #FFFFFF;">${teamName}</strong>, please make a payment of <strong style="color: #FFFFFF;">${eventData.eventFee}</strong>.
+        To complete your registration for team <strong style="color: #FFFFFF;">${teamName}</strong>, please make a payment of <strong style="color: #FFFFFF;">${eventData.cost}</strong>.
       </p>
        <div style="margin-top: 25px; margin-bottom: 25px;">
         <a href="${paymentLink}" style="background-color: #FFFFFF; color: #000000; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">Pay Now</a>

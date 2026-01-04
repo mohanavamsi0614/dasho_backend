@@ -56,16 +56,7 @@ export const initSocket = (server) => {
             const {eventId}=data;
             console.log(data)
             
-            // Try to get from cache? 
-            // Here eventId is passed. Is it _id or eventId?
-            // "findOne({_id:new ObjectId(eventId)})" implies it is _id.
-            
             let event = await db.collection("events").findOne({_id:new ObjectId(eventId)});
-            
-            // If I want to cache this, I'd need to cache by _id too, or lookup by _id.
-            // For now, I will just optimize the 'event.teams.length' check if possible, 
-            // but since we are modifying status if full, we probably want fresh data. 
-            // However, we can at least invalidate if we close it.
             
             if(event.maxTeams<=event.teams.length){
                 await db.collection("events").updateOne({_id:new ObjectId(eventId)},{$set:{status:"closed"}})
@@ -79,9 +70,6 @@ export const initSocket = (server) => {
             }
         })
         socket.on("currAttd",async (data)=>{
-            // data.eventId is _id based on usage in `changeAttd`? 
-            // In changeAttd: `_id:new ObjectId(eventId)`
-            // Here: `_id:new ObjectId(data.eventId)`
              let currAttd = cache.get(`currAttd_${data.eventId}`);
              if (!currAttd) {
                 const event = await db.collection("events").findOne({_id:new ObjectId(data.eventId)});
@@ -94,11 +82,7 @@ export const initSocket = (server) => {
             db.collection("events").updateOne({_id:new ObjectId(eventId)},{$set:{currAttd:id}})
             cache.put(`currAttd_${eventId}`, id);
             
-            // Also invalidate event object cache if it contains currAttd?
-             // The event object in participant/route.js might contain it.
-             // We need to fetch the event to know its 'eventId' string to invalidate `event_${eventId}` key.
-             
-             db.collection("events").findOne({_id:new ObjectId(eventId)}).then(event => {
+            db.collection("events").findOne({_id:new ObjectId(eventId)}).then(event => {
                  if (event && event.eventId) {
                      cache.del(`event_${event.eventId}`);
                  }
@@ -120,9 +104,14 @@ export const initSocket = (server) => {
             db.collection("events").updateOne({_id:new ObjectId(data.id)},{$set:{update:data.update}})
             io.to(data.id).emit("updateOn",data.update)
         })
+
         socket.on("getUpdate",async (data)=>{
             const update=await db.collection("events").findOne({_id:new ObjectId(data.eventId)}) 
             io.to(data.teamId).emit("updateOn",update.update)
+        })
+        socket.on("auto",async (data)=>{
+            console.log(data)
+            const update=await db.collection("events").updateOne({_id:new ObjectId(data.event)},{$set:{auto_payment_mail:data.auto}}) 
         })
     })
 
