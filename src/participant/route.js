@@ -458,7 +458,7 @@ participantRouter.post("/attd/:event/:pass",async (req,res)=>{
   if (!event_g.eventId) return res.status(500).json({ error: "Event data corrupted: missing eventId" });
   if(role == "lead"){
     const team=await db.collection(event_g.eventId).updateOne({password:pass},{$set: {lead:participant}});
-        const updatedTeam=await db.collection(event_g.eventId).findOne({password:pass});
+    const updatedTeam=await db.collection(event_g.eventId).findOne({password:pass});
     return res.json({team:updatedTeam});
   }
 
@@ -470,6 +470,7 @@ participantRouter.post("/attd/:event/:pass",async (req,res)=>{
       return member;
     })
     await db.collection(event_g.eventId).updateOne({password:pass},{$set :{members:members}});
+    const updatedTeam=await db.collection(event_g.eventId).findOne({password:pass});
     console.log(updatedTeam)
     return res.json({team:updatedTeam});
   
