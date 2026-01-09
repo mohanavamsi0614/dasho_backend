@@ -104,7 +104,7 @@ participantRouter.post("/register/hackathon/:event", async (req, res) => {
     if (!event.eventId) {
       return res.status(500).json({ error: "Event data corrupted: missing eventId" });
     }
-    const check=await db.collection(event.eventId).findOne({teamName:req.body.teamName.toLowerCase()})
+    const check=await db.collection(event.eventId).findOne({teamName:req.body.teamName.toLowerCase().trim()})
     if(check){
       return res.status(400).json({ error: "Team name already exists" });
     }
