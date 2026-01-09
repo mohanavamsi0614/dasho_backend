@@ -134,7 +134,7 @@ participantRouter.post("/register/hackathon/:event", async (req, res) => {
     
     const updatedUser = await userCollection.findOne({ _id: new ObjectId(userId) });
     if(event.cost && event.auto_payment_mail){
-    sendPaymentEmail(req.body.lead,event,req.body.teamName,`https://dashoo-p.vercel.app/payment/${event.eventId}/${team.insertedId}`)
+    sendPaymentEmail(req.body.lead,event,req.body.teamName,`https://dashoo-p.vercel.app/payment/${event._id}/${team.insertedId}`)
     return res.json({ message: "Registered for event successfully and please check the payment mail sent", user: updatedUser,team:team.insertedId ,payment:true,mail:true });
     }
     else if(event.cost && !event.auto_payment_mail){
