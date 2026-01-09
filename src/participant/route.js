@@ -116,6 +116,7 @@ participantRouter.post("/register/hackathon/:event", async (req, res) => {
 
     const team = await db.collection(event.eventId).insertOne({ 
       ...req.body, 
+      teamName:req.body.teamName.toLowerCase().trim(),
       userId: userId, 
       userName: user.name, 
       payment: false,
