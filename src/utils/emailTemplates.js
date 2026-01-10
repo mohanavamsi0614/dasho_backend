@@ -12,18 +12,6 @@ const HEADER_TEMPLATE = `
     </div>
 `;
 
-const HEADER_TEMPLATE = `
-<div style="font-family: Arial, sans-serif; background-color: #000000; padding: 20px; color: #FFFFFF;">
-  <div style="max-width: 600px; margin: auto; background: #111111; border-radius: 12px; overflow: hidden; box-shadow: 0 0 15px rgba(255,255,255,0.1);">
-    
-    <!-- Header -->
-    <div style="background-color: #000000; padding: 18px; text-align: center; border-bottom: 1px solid #222;">
-      <h1 style="margin: 0; font-size: 26px; letter-spacing: 1px;">
-        <a href="${FRONTEND_URL}/" target="_blank" style="color: #FFFFFF; text-decoration: none;">Dasho</a>
-      </h1>
-    </div>
-`;
-
 const FOOTER_TEMPLATE = `
     <!-- Footer -->
     <div style="background-color: #000000; border-top: 1px solid #222; text-align: center; padding: 12px; font-size: 13px; color: #777;">
@@ -47,9 +35,7 @@ const getEventDetailsHTML = (eventData) => {
     `;
   }
 
-  // Description (truncated if too long, or full?) - User asked for "add some of theess... description"
   if (eventData.description) {
-     // Convert newlines to <br> for basic formatting if it's plain text
     const formattedDesc = eventData.description.replace(/\n/g, '<br/>');
     html += `
       <div style="text-align: left; background-color: #1a1a1a; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #CCCCCC; font-size: 14px; line-height: 1.5;">
@@ -59,7 +45,6 @@ const getEventDetailsHTML = (eventData) => {
     `;
   }
 
-  // Highlighted Links Section
   if (eventData.links && eventData.links.length > 0) {
     html += `
       <div style="background-color: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-top: 25px; margin-bottom: 25px; text-align: left;">
