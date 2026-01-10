@@ -80,8 +80,7 @@ adminRouter.post("/payment_remider/:event/:userId",async (req,res)=>{
     const eventCollection=db.collection('events');
     const eventdata=await eventCollection.findOne({_id:new ObjectId(event)})
     const email=await db.collection(eventdata.eventId).findOne({_id:new ObjectId(userId)})
-    console.log(email)
-    sendPaymentEmail(email.lead,eventdata,email.lead.email,email.teamName,`https://dasho_p.vercel.app/payment/${eventdata._id}/${email._id}`)
+    sendPaymentEmail(email.lead,eventdata,email.teamName,`https://dasho_p.vercel.app/payment/${eventdata._id}/${email._id}`)
     res.json({message:"Payment reminder sent successfully"})
   } catch (error) {
     console.log(error)
