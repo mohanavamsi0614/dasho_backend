@@ -110,7 +110,6 @@ adminRouter.post("/payment/add/:eventId",async (req,res)=>{
 adminRouter.put("/team/update/:eventId/:teamId",async(req,res)=>{
   try {
     const {eventId,teamId}=req.params;
-    const {teamName}=req.body
     const event_id=await db.collection("events").findOne({_id:new ObjectId(eventId)})
     const eventCollection=db.collection(event_id.eventId)
     const team=await eventCollection.updateOne({
