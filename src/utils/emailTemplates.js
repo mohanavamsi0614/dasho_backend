@@ -111,7 +111,7 @@ export const getPaymentEmailTemplate = (user, eventData, teamName, paymentLink) 
       ${getEventDetailsHTML(eventData)}
 
       <p style="font-size: 16px; margin-bottom: 20px; color: #CCCCCC;">
-        Hello <strong style="color: #FFFFFF;">${user.name || "Participant"}</strong>,<br/>
+        Hello <strong style="color: #FFFFFF;">${user?.name || "Participant"}</strong>,<br/>
         Thank you for registering for <strong style="color: #FFFFFF;">${eventData.eventTitle}</strong>.
       </p>
       <p style="font-size: 15px; color: #BBBBBB;">
