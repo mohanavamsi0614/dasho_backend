@@ -92,13 +92,14 @@ participantRouter.post("/register/hackathon/:event", async (req, res) => {
     const event = await eventCollection.findOne({ _id: new ObjectId(req.params.event) });
     const userCollection = UserCollection();
     const user = await userCollection.findOne({ _id: new ObjectId(userId) });
+    const eventTeams_len=await db.collection(event.eventId).countDocuments()
     if(event.status!="open"){
       return res.status(400).json({ error: "Event is not open" });
     }
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
-    if (event.maxTeams <= (event?.teams?.length || 0)) {
+    if (event.maxTeams <= (eventTeams_len || 0)) {
       return res.status(400).json({ error: "Event is full" });
     }
     if (!event.eventId) {

@@ -90,6 +90,69 @@ adminRouter.post("/payment_remider/:event/:userId",async (req,res)=>{
   }
 })
 
+adminRouter.post("/payment/add/:eventId",async (req,res)=>{
+  try {
+    const {eventId}=req.params;
+    const eventCollection=db.collection('events');
+    const event=await eventCollection.findOne({_id:new ObjectId(eventId)})
+    const payment=await eventCollection.updateOne({
+      _id:new ObjectId(eventId)
+    },{
+      $push:{payments:req.body}
+    })
+    res.json({message:"Payment added successfully",payment})
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({error:"Server error"})
+  }
+})
+
+adminRouter.put("/team/update/:eventId/:teamId",async(req,res)=>{
+  try {
+    const {eventId,teamId}=req.params;
+    const {teamName}=req.body
+    const event_id=await db.collection("events").findOne({_id:new ObjectId(eventId)})
+    const eventCollection=db.collection(event_id.eventId)
+    const team=await eventCollection.updateOne({
+      _id:new ObjectId(teamId)
+    },{
+      $set:{...req.body}
+    })
+    res.json({message:"Team updated successfully",team})
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({error:"Server error"})
+  }
+})
+adminRouter.put("/payment/update/:eventId",async(req,res)=>{
+  try {
+    const {eventId}=req.params;
+    const eventCollection=await db.collection("events")
+    const payment=await eventCollection.updateOne({
+      _id:new ObjectId(eventId)
+    },{
+      $set:{payments:req.body}
+    })
+    res.json({message:"Payment updated successfully",payment})
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({error:"Server error"})
+  }
+})
+
+adminRouter.delete("/team/delete/:eventId/:teamId",async(req,res)=>{
+  try {
+    const {eventId,teamId}=req.params;
+    const event_id=await db.collection("events").findOne({_id:new ObjectId(eventId)})
+    const team=await db.collection(event_id.eventId).findOne({_id:new ObjectId(teamId)})
+    const event=await db.collection(event_id.eventId).deleteOne({_id:new ObjectId(teamId)})
+    res.json({message:"Team deleted successfully",event})
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({error:"Server error"})
+  }
+})
+
 adminRouter.post("/payment/qr/verify/:eventId/:userId", async (req, res) => {
   try {
     const { eventId, userId } = req.params;
